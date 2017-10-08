@@ -23,7 +23,7 @@ def _bn_relu(input):
     """Helper to build a BN -> relu block
     """
     norm = BatchNormalization(axis=CHANNEL_AXIS)(input)
-    return Activation("relu")(norm)
+    return Activation("selu")(norm)
 
 
 def _conv_bn_relu(**conv_params):
@@ -32,7 +32,7 @@ def _conv_bn_relu(**conv_params):
     filters = conv_params["filters"]
     kernel_size = conv_params["kernel_size"]
     strides = conv_params.setdefault("strides", (1, 1))
-    kernel_initializer = conv_params.setdefault("kernel_initializer", "he_normal")
+    kernel_initializer = conv_params.setdefault("kernel_initializer", "lecun_normal")
     padding = conv_params.setdefault("padding", "same")
     kernel_regularizer = conv_params.setdefault("kernel_regularizer", l2(1.e-4))
 
@@ -53,7 +53,7 @@ def _bn_relu_conv(**conv_params):
     filters = conv_params["filters"]
     kernel_size = conv_params["kernel_size"]
     strides = conv_params.setdefault("strides", (1, 1))
-    kernel_initializer = conv_params.setdefault("kernel_initializer", "he_normal")
+    kernel_initializer = conv_params.setdefault("kernel_initializer", "lecun_normal")
     padding = conv_params.setdefault("padding", "same")
     kernel_regularizer = conv_params.setdefault("kernel_regularizer", l2(1.e-4))
 
@@ -86,7 +86,7 @@ def _shortcut(input, residual):
                           kernel_size=(1, 1),
                           strides=(stride_width, stride_height),
                           padding="valid",
-                          kernel_initializer="he_normal",
+                          kernel_initializer="lecun_normal",
                           kernel_regularizer=l2(0.0001))(input)
 
     return add([shortcut, residual])
@@ -118,7 +118,7 @@ def basic_block(filters, init_strides=(1, 1), is_first_block_of_first_layer=Fals
             conv1 = Conv2D(filters=filters, kernel_size=(3, 3),
                            strides=init_strides,
                            padding="same",
-                           kernel_initializer="he_normal",
+                           kernel_initializer="lecun_normal",
                            kernel_regularizer=l2(1e-4))(input)
         else:
             conv1 = _bn_relu_conv(filters=filters, kernel_size=(3, 3),
@@ -144,7 +144,7 @@ def bottleneck(filters, init_strides=(1, 1), is_first_block_of_first_layer=False
             conv_1_1 = Conv2D(filters=filters, kernel_size=(1, 1),
                               strides=init_strides,
                               padding="same",
-                              kernel_initializer="he_normal",
+                              kernel_initializer="lecun_normal",
                               kernel_regularizer=l2(1e-4))(input)
         else:
             conv_1_1 = _bn_relu_conv(filters=filters, kernel_size=(1, 1),
@@ -226,7 +226,7 @@ class ResnetBuilder(object):
         #                         strides=(1, 1))(block)
         pool2 = AveragePooling2D((5,5), strides=(1,1))(block)
         flatten1 = Flatten()(pool2)
-        dense = Dense(units=num_outputs, kernel_initializer="he_normal",
+        dense = Dense(units=num_outputs, kernel_initializer="lecun_normal",
                       activation="softmax")(flatten1)
 
         model = Model(inputs=input, outputs=dense)

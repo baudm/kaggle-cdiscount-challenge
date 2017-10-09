@@ -22,7 +22,7 @@ def val_loader(batch_size, normalize=True):
     images = []
     categories = []
     counter = 0
-    with open('input/splitted.1.bson', 'rb') as f:
+    with open('input/train.bson', 'rb') as f:
         data = bson.decode_file_iter(f)
         for d in data:
             c = d['category_id']
@@ -104,24 +104,26 @@ def main():
     model = Xception(include_top=False, input_shape=(180, 180, 3), pooling='avg')
     a = 12371293-VAL_STEPS
     steps = int(a/VAL_BATCH_SIZE)
-    loader = train_loader(VAL_BATCH_SIZE)
+    loader = val_loader(VAL_BATCH_SIZE)
     features = []
     cats = []
     i = 0
-    model.predict_generator
+
     for img, cat in loader:
         f = model.predict_on_batch(img)
         features.append(f)
         cats.append(cat)
-        if len(cats) >= 256:
-            n = '{:02d}'.format(i)
-            features = np.array(features).reshape(256 * 256, -1)
-            cats = np.array(cats).flatten()
-            with open('features/train-features.' +n+'.npz', 'wb') as f:
-                np.savez(f, features=features, categories=cats)
-            features = []
-            cats = []
-            i += 1
+
+    #if len(cats) >= 256:
+    n = '{:02d}'.format(i)
+    features = np.array(features).reshape(len(cats) * 256, -1)
+    cats = np.array(cats).flatten()
+    with open('val-features.' +n+'.npz', 'wb') as f:
+        np.savez(f, features=features, categories=cats)
+    features = []
+    cats = []
+    i += 1
+
     #features = np.stack(features)
     #cats = np.stack(cats)
 

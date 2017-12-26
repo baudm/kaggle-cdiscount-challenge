@@ -13,8 +13,6 @@ with open('category-table', 'rb') as f:
     lookup_table = pickle.load(f)
 num_classes = len(lookup_table)
 
-from keras.utils import to_categorical
-import threadutils
 from buffering import buffered_gen_threaded as buf
 
 def shuffle_in_unison_scary(a, b):
@@ -26,25 +24,54 @@ def shuffle_in_unison_scary(a, b):
 #import functools
 
 #buffered_gen_threaded = functools.partial(buffering.buffered_gen_threaded, buffer_size=4)
-import json
-
-with open('stats.json', 'r') as f:
-    stats = json.load(f)
-
-# @threadutils.threadsafe_generator
-# @buffering.buffered_gen_threaded
 
 
-def drop(features, categories):
-    for_dropping = []
-    for i, c in enumerate(categories):
-        num_samples = stats[c]
-        if np.random.uniform() > (1200./num_samples):
-            for_dropping.append(i)
-    #print('dropped:', len(for_dropping))
-    features = np.delete(features, for_dropping, axis=0)
-    categories = np.delete(categories, for_dropping, axis=0)
-    return features, categories
+VAL_NUM = 10
+VAL_SET = 256*256*VAL_NUM
+
+SHARED = {}
+
+
+
+import bson
+from skimage.io import imread
+import io
+
+
+def train_loader(batch_size, normalize=True):
+    images = []
+    categories = []
+
+    while True:
+        with open('/home/darwin/Projects/kaggle/cdiscount/input/train.bson', 'rb') as f:
+            data = bson.decode_file_iter(f)
+            for d in data:
+                cid = d['category_id']
+                # Convert from category_id to index
+                c = lookup_table[cid]
+                #c = to_categorical(c, num_classes)
+                ### Accelerate by using just 1 image per product
+                for pic in d['imgs']:
+
+                    # Randomly skip 3/4 of training samples
+                    #if random.randint(0, 3) != 0:
+                    #    continue
+
+                    img = imread(io.BytesIO(pic['picture']))
+
+                    images.append(img)
+                    categories.append(c)
+
+
+                    if len(categories) >= batch_size:
+                        images = np.stack(images)
+                        categories = np.stack(categories).squeeze()
+                        if normalize:
+                           images = (images - 127.5) / 127.5
+                        # print(counter)
+                        yield images, categories
+                        images = []
+                        categories = []
 
 
 def loader(paths, batch_size=64):
@@ -54,6 +81,9 @@ def loader(paths, batch_size=64):
         for path in paths:
             files.extend(glob.glob(os.path.join(path, '*.npz')))
         np.random.shuffle(files)
+        SHARED = globals()['SHARED']
+        SHARED['val'] = files[:VAL_NUM]
+        files = files[VAL_NUM:]
         for npz in files:
             # Load pack into memory
             archive = np.load(npz)
@@ -67,7 +97,7 @@ def loader(paths, batch_size=64):
             #categories = categories.flatten()
             shuffle_in_unison_scary(features, categories)
             # Split into mini batches
-            num_batches = int(len(categories) / batch_size)
+            num_batches = len(categories) // batch_size
             #half = int(np.ceil(num_batches/2.))
             features = np.array_split(features, num_batches)
             categories = np.array_split(categories, num_batches)
@@ -78,15 +108,14 @@ def loader(paths, batch_size=64):
                 # convert to one-hot representation
                 #batch_categories = np.stack([to_categorical(c, num_classes) for c in batch_categories]).squeeze()
                 yield batch_features, batch_categories
-                # if can_preload and len(features) <= half and i + 1 < len(files):
-                #     can_preload = False
-                #     # preload next file
-                #     np.load(files[i+1])['features']
+
 
 def loader_test(path, batch_size=64):
     """Generator to be used with model.fit_generator()"""
     while True:
-        files = glob.glob(os.path.join(path, '*.npz'))
+        SHARED = globals()['SHARED']
+        files = SHARED['val']
+        # print('val set:', files)
         #np.random.shuffle(files)
         for npz in files:
             # Load pack into memory
@@ -98,7 +127,7 @@ def loader_test(path, batch_size=64):
             #categories = categories.flatten()
             shuffle_in_unison_scary(features, categories)
             # Split into mini batches
-            num_batches = int(len(categories) / batch_size)
+            num_batches = len(categories) // batch_size
             #half = int(np.ceil(num_batches/2.))
             features = np.array_split(features, num_batches)
             categories = np.array_split(categories, num_batches)
@@ -109,69 +138,18 @@ def loader_test(path, batch_size=64):
                 # convert to one-hot representation
                 #batch_categories = np.stack([to_categorical(c, num_classes) for c in batch_categories]).squeeze()
                 yield batch_features, batch_categories
-                # if can_preload and len(features) <= half and i + 1 < len(files):
-                #     can_preload = False
-                #     # preload next file
-                #     np.load(files[i+1])['features']
-            break
 
 import queue
 import os.path
 
 
-npz_queue = queue.Queue(4)
-batch_queue = queue.Queue(512)
-
-
-def parloader(paths):
-    """Generator to be used with model.fit_generator()"""
-    while True:
-        files = []
-        for path in paths:
-            files.extend(glob.glob(os.path.join(path, '*.npz')))
-        np.random.shuffle(files)
-        for npz in files:
-            npz_queue.put(npz)
-
-
-def blah(batch_size):
-    while True:
-        npz = npz_queue.get()
-        # Load pack into memory
-        archive = np.load(npz)
-        features = archive['features']
-        categories = archive['categories']
-        del archive
-        # print(features.shape)
-        #features, categories = drop(features, categories)
-        # print(features.shape)
-        # features = features.reshape(256*256, -1)
-        # categories = categories.flatten()
-        shuffle_in_unison_scary(features, categories)
-        # Split into mini batches
-        num_batches = int(len(categories) / batch_size)
-        # half = int(np.ceil(num_batches/2.))
-        features = np.array_split(features, num_batches)
-        categories = np.array_split(categories, num_batches)
-        # can_preload = True
-        while categories:
-            batch_features = features.pop()
-            batch_categories = categories.pop()
-            # convert to one-hot representation
-            # batch_categories = np.stack([to_categorical(c, num_classes) for c in batch_categories]).squeeze()
-            batch_queue.put((batch_features, batch_categories))
-
-
-def batch_loader():
-    while True:
-        yield batch_queue.get()
-
 
 from keras.callbacks import ModelCheckpoint
 
-VAL_SET = 181597
+
 
 import sys
+from keras.applications import MobileNet
 from keras.models import load_model
 from keras.layers import Conv1D, Reshape, Flatten, Conv2D
 
@@ -184,10 +162,11 @@ def make_model():
     # model.add(Reshape((-1,)))
 
     #model.add(Flatten())
-    #model.add(Dropout(0.2))
-    # weight_decay = regularizers.l2(1e-5)
 
-    #model.add(Dense(4096, activation='relu'))
+    # weight_decay = regularizers.l2(1e-5)
+    model.add(Dense(4096, activation='relu'))
+    model.add(Dropout(0.25))
+    model.add(Dense(4096, activation='relu'))
     # model.add(Dropout(0.1))
 
     # model.add(Dense(2048, activation='relu'))
@@ -201,53 +180,42 @@ def make_model():
     return model
 
 
+def make_model2():
+    base_model = MobileNet(input_shape=(180, 180, 3), weights=None, classes=num_classes)
+    return base_model
+
 from keras.optimizers import SGD, RMSprop
 from keras.callbacks import LearningRateScheduler
 
-from threading import Thread
 
-from keras import regularizers
-import json
-
-w = {}
-most = max(stats.values())
-for k, v in stats.items():
-    if v < 1200:
-        v = 1200
-    w[lookup_table[int(k)]] = most/v
-
-
+from keras.applications import Xception
+from keras.models import Model
 
 def main(base_lr=0.1, batch_size=64):
     initial_epoch = 0
     if len(sys.argv) == 2:
         fname = sys.argv[1]
+        # base_model = Xception(include_top=False, weights=None, input_shape=(180, 180, 3), pooling='avg')
         model = load_model(fname, compile=False)
+        # combined = Model(base_model.input, model(base_model.output))
+        # for layer in base_model.layers:
+        #     if not layer.name.startswith('block14') and not layer.name.startswith('block13'):
+        #         layer.trainable = False
+        # model = combined
         try:
             initial_epoch = int(fname.split('.')[1]) + 1
         except (IndexError, ValueError):
             pass
-        # for layer in model.layers:
-        #     if isinstance(layer, Dense):
-        #         layer.kernel_regularizer = regularizers.l2(1e-5)
-        #     elif layer.name == 'dropout_1':
-        #         layer.rate = 0.2
-        #     elif layer.name == 'dropout_2':
-        #         layer.rate = 0.3
-        #     print(layer.get_config())
-            # if isinstance(layer, Dropout):# and layer.name in ['dropout_1', 'dropout_2', 'dropout_4']:
-            #     layer.rate = 0.5
-            #     print('set dropout rate to zero', layer)
-
     else:
-        model = make_model()
+        model = make_model2()
+        # model.load_weights('model.weights')
 
     #print(model.get_config())
     model.summary()
 
 
     k = 64/2
-    base_lr = 0.05
+    base_lr = 0.01
 
 
     sgd = SGD(base_lr, momentum=0.9, nesterov=True)
@@ -256,41 +224,31 @@ def main(base_lr=0.1, batch_size=64):
 
     model.compile(sgd, 'sparse_categorical_crossentropy', metrics=['accuracy'])
 
-    num_samples = 12371293 - VAL_SET + 62*256*256 + 53662
-    batch_size = 512
+    num_samples = 12371293 - VAL_SET
+    batch_size = 64
     steps_per_epoch = int(np.ceil(num_samples/batch_size))
-    epochs = 100
+    epochs = 1000
 
     num_workers = 1
 
     def schedule(epoch):
-        e = int(epoch /10)
+        e = epoch // 1
         #print('decay', e)
-        return base_lr * (0.94**e)
+        return base_lr * (0.98**e)
 
     lr_scheduler = LearningRateScheduler(schedule)
-    checkpoint = ModelCheckpoint('/home/darwin/Projects/kaggle/cdiscount/model.{epoch:02d}.hdf5', verbose=True, save_best_only=True)
+    checkpoint = ModelCheckpoint('/home/darwin/Projects/kaggle/cdiscount-new/model.{epoch:02d}.hdf5', verbose=True, save_best_only=True)
 
     buf_size = 2*256*256/batch_size
 
-    dirs = ['/var/local/features', '/home/darwin/Projects/kaggle/cdiscount/features']
+    dirs = ['/var/local/features']
 
-    t = Thread(target=parloader, args=(dirs,))
-    t.start()
-
-    threads = []
-    for i in range(2):
-       t_hdd = Thread(target=blah, args=(batch_size,))
-       t_hdd.start()
-       threads.append(t_hdd)
-
-
-
-    #buf(loader(dirs, batch_size), buf_size)
-    # ldr = buf(loader(dirs, batch_size), buf_size)
-    ldr = batch_loader()
+    ldr = buf(loader(dirs, batch_size), buf_size)
+    ldr = buf(train_loader(batch_size), 5)
+    # test_ldr = buf(loader_test(['/var/local/features/val'], batch_size), buf_size)
+    # ldr = batch_loader()
     return model.fit_generator(ldr, steps_per_epoch, epochs, callbacks=[checkpoint, lr_scheduler]
-                        , validation_data=loader(['/var/local/features/val'], batch_size), validation_steps=int(VAL_SET/batch_size)
+                        # , validation_data=test_ldr, validation_steps=VAL_SET//batch_size
                         , workers=num_workers,
                                # class_weight=w,
                         initial_epoch=initial_epoch
@@ -299,7 +257,6 @@ def main(base_lr=0.1, batch_size=64):
 import tensorflow as tf
 from keras import backend as K
 
-import itertools
 
 if __name__ == '__main__':
     main()

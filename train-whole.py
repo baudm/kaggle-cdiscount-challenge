@@ -14,7 +14,6 @@ with open('category-table', 'rb') as f:
 num_classes = len(lookup_table)
 
 from keras.utils import to_categorical
-import threadutils
 from buffering import buffered_gen_threaded as buf
 
 def shuffle_in_unison_scary(a, b):
@@ -22,29 +21,6 @@ def shuffle_in_unison_scary(a, b):
     np.random.shuffle(a)
     np.random.set_state(rng_state)
     np.random.shuffle(b)
-
-#import functools
-
-#buffered_gen_threaded = functools.partial(buffering.buffered_gen_threaded, buffer_size=4)
-import json
-
-with open('stats.json', 'r') as f:
-    stats = json.load(f)
-
-# @threadutils.threadsafe_generator
-# @buffering.buffered_gen_threaded
-
-
-def drop(features, categories):
-    for_dropping = []
-    for i, c in enumerate(categories):
-        num_samples = stats[c]
-        if np.random.uniform() > (1200./num_samples):
-            for_dropping.append(i)
-    #print('dropped:', len(for_dropping))
-    features = np.delete(features, for_dropping, axis=0)
-    categories = np.delete(categories, for_dropping, axis=0)
-    return features, categories
 
 
 def loader(paths, batch_size=64):
@@ -176,8 +152,8 @@ from keras.models import load_model
 from keras.layers import Conv1D, Reshape, Flatten, Conv2D
 
 def make_model():
-    model = Sequential()
-    model.add(InputLayer(input_shape=(2048,)))
+    base_model = MobileNet(input_shape=(180, 180, 3), weights=None, include_top=False, pooling='avg')
+    # model.add(InputLayer(input_shape=(2048,)))
     # model.add(Reshape((1, 1, 2048)))
     # model.add(Conv2D(2048, 1, activation='relu', padding='same'))
     # model.add(Conv2D(num_classes, 1, activation='softmax'))
@@ -196,9 +172,9 @@ def make_model():
     # model.add(Dense(2048, activation='relu'))
     #model.add(Dropout(0.2))
     #model.add(Dense(3072, activation='relu'))
-    model.add(Dropout(0.5))
-    model.add(Dense(num_classes, activation='softmax'))
-    return model
+    x = Dropout(0.5)(base_model.output)
+    x = Dense(num_classes, activation='softmax')(x)
+    return Model(base_model.input, x)
 
 
 from keras.optimizers import SGD, RMSprop
@@ -209,15 +185,7 @@ from threading import Thread
 from keras import regularizers
 import json
 
-w = {}
-most = max(stats.values())
-for k, v in stats.items():
-    if v < 1200:
-        v = 1200
-    w[lookup_table[int(k)]] = most/v
-
-
-from keras.applications import Xception
+from keras.applications import Xception, MobileNet
 from keras.models import Model
 
 import bson

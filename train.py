@@ -251,7 +251,7 @@ def make_Xception(input_shape):
     base_model = Xception(include_top=False, input_shape=input_shape, pooling='avg')
     x = base_model.output
 
-    x = Dropout(0.2)(x)
+    # x = Dropout(0.2)(x)
     #x = SeparableConv2D(4096, (3, 3), use_bias=False, name='block15_sepconv')(x)
     #x = BatchNormalization(name='block15_sepconv_bn')(x)
     #x = Activation('relu', name='block15_sepconv_act')(x)
@@ -266,11 +266,18 @@ def make_Xception(input_shape):
 
 def make_model(input_shape):
     base_model, x = make_Xception(input_shape)
-    x = Dense(num_classes, activation='softmax', name='predictions')(x)
-    model = Model(input=base_model.input, output=x)
+    classifier = load_model('model.52.hdf5', compile=False)
+    #x = Dense(num_classes, activation='softmax', name='predictions')(x)
+
     # Freeze base model
     for layer in base_model.layers:
         layer.trainable = False
+
+    for layer in base_model.layers:
+        if layer.name.startswith('block14'):
+            layer.trainable = True
+
+    model = Model(base_model.input, classifier(x))
 
     return model
 

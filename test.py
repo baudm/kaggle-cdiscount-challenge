@@ -17,12 +17,13 @@ import io
 from skimage.data import imread
 import numpy as np
 from keras.utils import GeneratorEnqueuer
+import threadutils
 
 def loader(batch_size, normalize=True):
-    images = []
-    ids = []
     with open('input/test.bson', 'rb') as f:
         data = bson.decode_file_iter(f)
+        images = []
+        ids = []
         for d in data:
             for pic in d['imgs']:
                 img = imread(io.BytesIO(pic['picture']))
@@ -37,10 +38,18 @@ def loader(batch_size, normalize=True):
                 images = []
                 ids = []
 
+        if images:
+            images = np.stack(images)
+            if normalize:
+                images = (images - 127.5) / 127.5
+            yield ids, images
+
 
 import csv
 from threading import Thread
 from queue import Queue
+
+from keras.applications import Xception
 
 def main():
     if len(sys.argv) != 2:
@@ -48,6 +57,7 @@ def main():
         exit(1)
 
     q = Queue()
+    iqueue = Queue(3)
 
     def dump():
         with open('out.csv', 'w') as csvfile:
@@ -78,15 +88,34 @@ def main():
     t = Thread(target=dump)
     t.start()
 
-    model = load_model(sys.argv[1])
 
-    batch_size = 512
+
+    batch_size = 256
+
+
+    def process():
+        pre_model = Xception(include_top=False, input_shape=(180, 180, 3), pooling='avg')
+        model = load_model(sys.argv[1])
+        while True:
+            d = iqueue.get()
+            if d is None:
+                break
+            i, img = d
+            p = pre_model.predict_on_batch(img)
+            p = model.predict_on_batch(p)
+            q.put((i, p))
+        q.put(None)
+
+    pt = Thread(target=process)
+    pt.start()
 
     for i, img in loader(batch_size):
-        p = model.predict(img, len(i))
-        q.put((i, p))
+        iqueue.put((i, img))
 
-    q.put(None)
+
+    iqueue.put(None)
+    iqueue.join()
+    pt.join()
     q.join()
     t.join()
 

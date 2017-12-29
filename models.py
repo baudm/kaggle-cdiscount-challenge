@@ -24,7 +24,7 @@ def create_classifier_model(use_weights=False):
 
     if use_weights:
         weights_name = os.path.basename(WEIGHTS_PATH)
-        weights_path = get_file(weights_name, WEIGHTS_PATH, cache_dir='weights',
+        weights_path = get_file(weights_name, WEIGHTS_PATH, cache_dir='.', cache_subdir='weights',
                                 file_hash='0fa9d0d2fe9574a1f588ff04b12c22d036dd958d6e4f697f7ec59c873c942d2b')
         classifier.load_weights(weights_path)
 

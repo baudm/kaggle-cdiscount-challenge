@@ -35,7 +35,7 @@ def _shuffle_in_unison(a, b):
     np.random.shuffle(b)
 
 
-def train_image_loader(batch_size, normalize=True, augment=False):
+def train_image_loader(batch_size, normalize=True, augment=False, demo=False):
     images = []
     categories = []
 
@@ -49,12 +49,13 @@ def train_image_loader(batch_size, normalize=True, augment=False):
         horizontal_flip=True,
         fill_mode='nearest')
 
-    with open('input/train.bson', 'rb') as f:
+    input_name = 'train_example' if demo else 'train'
+    with open('input/' + input_name + '.bson', 'rb') as f:
         for d in bson.decode_file_iter(f):
-            cid = d['category_id']
+            cid = str(d['category_id'])
             # Convert from category_id to index
             c = CATEGORY_TO_LABEL[cid]
-            num_samples = _SAMPLE_DISTRIBUTION[str(cid)]
+            num_samples = _SAMPLE_DISTRIBUTION[cid]
             # Many categories have less than 1,200 samples.
             # Boost that number to around 1,200 via data augmentation
             iters = 1200 // num_samples if augment else 1

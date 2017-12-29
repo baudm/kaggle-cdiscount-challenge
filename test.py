@@ -18,9 +18,6 @@ LABEL_TO_CATEGORY = dict(zip(data.CATEGORY_TO_LABEL.values(), data.CATEGORY_TO_L
 
 
 def main():
-    top_model = load_model(sys.argv[1]) if len(sys.argv) == 2 else None
-    model = models.create_full_model(top_model)
-
     q = Queue()
     iqueue = Queue(3)
 
@@ -55,6 +52,8 @@ def main():
     batch_size = 256
 
     def process():
+        top_model = load_model(sys.argv[1]) if len(sys.argv) == 2 else None
+        model = models.create_full_model(top_model)
         while True:
             d = iqueue.get()
             if d is None:

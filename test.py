@@ -1,66 +1,31 @@
 #!/usr/bin/env python
 
-import bson
 import sys
-from keras.models import load_model
-import pickle
-
-with open('category-table', 'rb') as f:
-    lookup_table = pickle.load(f)
-
-# swap keys and values
-lookup_table = dict(zip(lookup_table.values(),lookup_table.keys()))
-
-num_classes = len(lookup_table)
-
-import io
-from skimage.data import imread
-import numpy as np
-from keras.utils import GeneratorEnqueuer
-import threadutils
-
-def loader(batch_size, normalize=True):
-    with open('input/test.bson', 'rb') as f:
-        data = bson.decode_file_iter(f)
-        images = []
-        ids = []
-        for d in data:
-            for pic in d['imgs']:
-                img = imread(io.BytesIO(pic['picture']))
-                images.append(img)
-                ids.append(d['_id'])
-
-            if len(ids) >= batch_size:
-                images = np.stack(images)
-                if normalize:
-                    images = (images - 127.5) / 127.5
-                yield ids, images
-                images = []
-                ids = []
-
-        if images:
-            images = np.stack(images)
-            if normalize:
-                images = (images - 127.5) / 127.5
-            yield ids, images
-
 
 import csv
 from threading import Thread
 from queue import Queue
 
-from keras.applications import Xception
+import numpy as np
+
+from keras.models import load_model
+
+import data
+import models
+
+# Inverse mapping
+LABEL_TO_CATEGORY = dict(zip(data.CATEGORY_TO_LABEL.values(), data.CATEGORY_TO_LABEL.keys()))
+
 
 def main():
-    if len(sys.argv) != 2:
-        print('Model required')
-        exit(1)
+    top_model = load_model(sys.argv[1]) if len(sys.argv) == 2 else None
+    model = models.create_full_model(top_model)
 
     q = Queue()
     iqueue = Queue(3)
 
     def dump():
-        with open('out.csv', 'w') as csvfile:
+        with open('predictions.csv', 'w') as csvfile:
             writer = csv.writer(csvfile)
             writer.writerow(['_id', 'category_id'])
             while True:
@@ -70,7 +35,7 @@ def main():
                 i, p = d
 
                 cats = np.argmax(p, axis=-1)
-                cats = list(map(lookup_table.get, cats))
+                cats = list(map(LABEL_TO_CATEGORY.get, cats))
 
                 a = {}
                 for j in range(len(i)):
@@ -83,35 +48,27 @@ def main():
                     best_cat = cat_ids[best_idx]
                     writer.writerow([prod_id, best_cat])
 
-
-
     t = Thread(target=dump)
     t.start()
 
 
-
     batch_size = 256
 
-
     def process():
-        pre_model = Xception(include_top=False, input_shape=(180, 180, 3), pooling='avg')
-        model = load_model(sys.argv[1])
         while True:
             d = iqueue.get()
             if d is None:
                 break
             i, img = d
-            p = pre_model.predict_on_batch(img)
-            p = model.predict_on_batch(p)
+            p = model.predict_on_batch(img)
             q.put((i, p))
         q.put(None)
 
     pt = Thread(target=process)
     pt.start()
 
-    for i, img in loader(batch_size):
+    for i, img in data.test_image_loader(batch_size):
         iqueue.put((i, img))
-
 
     iqueue.put(None)
     iqueue.join()

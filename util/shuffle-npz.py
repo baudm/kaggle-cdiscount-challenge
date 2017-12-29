@@ -1,17 +1,17 @@
 #!/usr/bin/env python
 
-import numpy as np
 import glob
+import uuid
+
+import numpy as np
 
 
-
-def shuffle_in_unison_scary(a, b):
+def shuffle_in_unison(a, b):
     rng_state = np.random.get_state()
     np.random.shuffle(a)
     np.random.set_state(rng_state)
     np.random.shuffle(b)
 
-import uuid
 
 def save(b_f, b_c):
     name = str(uuid.uuid4()) + '.npz'
@@ -33,7 +33,7 @@ def main():
         ar = np.load(npz)
         f = ar['features']
         c = ar['categories']
-        shuffle_in_unison_scary(f, c)
+        shuffle_in_unison(f, c)
         for i in range(len(c)):
             j = np.random.randint(len(f_buckets))
             b_f = f_buckets[j]

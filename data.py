@@ -135,4 +135,4 @@ def test_image_loader(batch_size, normalize=True):
             images = np.stack(images)
             if normalize:
                 images = (images - 127.5) / 127.5
-            yield ids,
+            yield ids, images

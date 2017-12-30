@@ -1,0 +1,6 @@
+h5py
+Keras
+numpy
+pymongo
+scikit-image
+tensorflow
